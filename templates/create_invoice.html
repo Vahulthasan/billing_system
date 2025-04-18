@@ -1,0 +1,304 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <!-- Product Selection -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Select Products</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-group mb-3">
+                        <input type="text" id="productSearch" class="form-control" placeholder="Search products...">
+                    </div>
+                    <div class="product-list" style="max-height: 400px; overflow-y: auto;">
+                        {% for product in products %}
+                        <div class="product-item card mb-2">
+                            <div class="card-body">
+                                <h6 class="card-title">{{ product.name }}</h6>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p class="card-text mb-0">Price: ₹{{ "%.2f"|format(product.price) }}</p>
+                                        <p class="card-text mb-0">GST: {{ "%.0f"|format(product.gst_rate) }}%</p>
+                                        <p class="card-text mb-0">Stock: {{ product.quantity }}</p>
+                                    </div>
+                                    <button class="btn btn-sm btn-primary add-to-bucket" 
+                                            data-id="{{ product.id }}"
+                                            data-name="{{ product.name }}"
+                                            data-price="{{ product.price }}"
+                                            data-gst="{{ product.gst_rate }}"
+                                            data-stock="{{ product.quantity }}">
+                                        Add
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Billing Bucket -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">Invoice Details</h5>
+                </div>
+                <div class="card-body">
+                    <!-- Customer Details Form -->
+                    <form id="invoiceForm">
+                        <div class="mb-3">
+                            <label for="customerName" class="form-label">Customer Name*</label>
+                            <input type="text" class="form-control" id="customerName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="customerAddress" class="form-label">Address*</label>
+                            <textarea class="form-control" id="customerAddress" rows="2" required></textarea>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="customerPhone" class="form-label">Phone</label>
+                                    <input type="tel" class="form-control" id="customerPhone">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="customerGSTIN" class="form-label">GSTIN</label>
+                                    <input type="text" class="form-control" id="customerGSTIN">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="paymentMethod" class="form-label">Payment Method*</label>
+                            <select class="form-control" id="paymentMethod" required>
+                                <option value="Cash">Cash</option>
+                                <option value="UPI">UPI</option>
+                                <option value="Card">Card</option>
+                                <option value="Bank Transfer">Bank Transfer</option>
+                            </select>
+                        </div>
+                    </form>
+
+                    <!-- Items Table -->
+                    <div class="table-responsive mt-4">
+                        <table class="table table-bordered" id="bucketTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Item</th>
+                                    <th>Qty</th>
+                                    <th>Price</th>
+                                    <th>GST</th>
+                                    <th>Total</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="bucketItems">
+                                <!-- Items will be added here dynamically -->
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="2"></td>
+                                    <td colspan="2">Subtotal:</td>
+                                    <td colspan="2" id="subtotal">₹0.00</td>
+                                </tr>
+                                <tr>
+                                    <td colspan="2"></td>
+                                    <td colspan="2">GST Total:</td>
+                                    <td colspan="2" id="gstTotal">₹0.00</td>
+                                </tr>
+                                <tr class="table-primary">
+                                    <td colspan="2"></td>
+                                    <td colspan="2"><strong>Grand Total:</strong></td>
+                                    <td colspan="2" id="grandTotal"><strong>₹0.00</strong></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    <!-- Generate Invoice Button -->
+                    <div class="text-end mt-3">
+                        <button class="btn btn-primary" id="generateInvoice">
+                            Generate Invoice
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add to Bucket Modal -->
+<div class="modal fade" id="quantityModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add to Invoice</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="quantity" class="form-label">Quantity</label>
+                    <input type="number" class="form-control" id="quantity" min="1" value="1">
+                    <small class="text-muted">Available stock: <span id="availableStock">0</span></small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirmAdd">Add</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let bucketItems = [];
+    const quantityModal = new bootstrap.Modal(document.getElementById('quantityModal'));
+    let selectedProduct = null;
+
+    // Product search functionality
+    document.getElementById('productSearch').addEventListener('input', function(e) {
+        const searchTerm = e.target.value.toLowerCase();
+        document.querySelectorAll('.product-item').forEach(item => {
+            const productName = item.querySelector('.card-title').textContent.toLowerCase();
+            item.style.display = productName.includes(searchTerm) ? '' : 'none';
+        });
+    });
+
+    // Add to bucket button click
+    document.querySelectorAll('.add-to-bucket').forEach(button => {
+        button.addEventListener('click', function() {
+            selectedProduct = {
+                id: this.dataset.id,
+                name: this.dataset.name,
+                price: parseFloat(this.dataset.price),
+                gst: parseFloat(this.dataset.gst),
+                stock: parseInt(this.dataset.stock)
+            };
+            document.getElementById('availableStock').textContent = selectedProduct.stock;
+            document.getElementById('quantity').value = "1";
+            document.getElementById('quantity').max = selectedProduct.stock;
+            quantityModal.show();
+        });
+    });
+
+    // Confirm add button click
+    document.getElementById('confirmAdd').addEventListener('click', function() {
+        const quantity = parseInt(document.getElementById('quantity').value);
+        if (quantity > 0 && quantity <= selectedProduct.stock) {
+            const gstAmount = (selectedProduct.price * selectedProduct.gst / 100) * quantity;
+            const total = (selectedProduct.price * quantity) + gstAmount;
+
+            bucketItems.push({
+                product_id: selectedProduct.id,
+                name: selectedProduct.name,
+                quantity: quantity,
+                price: selectedProduct.price,
+                gst_rate: selectedProduct.gst,
+                gst_amount: gstAmount,
+                subtotal: selectedProduct.price * quantity,
+                total: total
+            });
+
+            updateBucketTable();
+            quantityModal.hide();
+        }
+    });
+
+    // Update bucket table
+    function updateBucketTable() {
+        const tbody = document.getElementById('bucketItems');
+        tbody.innerHTML = '';
+        
+        let subtotal = 0;
+        let gstTotal = 0;
+
+        bucketItems.forEach((item, index) => {
+            const row = tbody.insertRow();
+            row.innerHTML = `
+                <td>${item.name}</td>
+                <td>${item.quantity}</td>
+                <td>₹${item.price.toFixed(2)}</td>
+                <td>${item.gst_rate}%</td>
+                <td>₹${item.total.toFixed(2)}</td>
+                <td>
+                    <button class="btn btn-sm btn-danger remove-item" data-index="${index}">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </td>
+            `;
+            subtotal += item.subtotal;
+            gstTotal += item.gst_amount;
+        });
+
+        document.getElementById('subtotal').textContent = `₹${subtotal.toFixed(2)}`;
+        document.getElementById('gstTotal').textContent = `₹${gstTotal.toFixed(2)}`;
+        document.getElementById('grandTotal').textContent = `₹${(subtotal + gstTotal).toFixed(2)}`;
+
+        // Add remove button event listeners
+        document.querySelectorAll('.remove-item').forEach(button => {
+            button.addEventListener('click', function() {
+                bucketItems.splice(this.dataset.index, 1);
+                updateBucketTable();
+            });
+        });
+    }
+
+    // Generate invoice
+    document.getElementById('generateInvoice').addEventListener('click', function() {
+        if (!document.getElementById('invoiceForm').checkValidity()) {
+            alert('Please fill in all required fields');
+            return;
+        }
+
+        if (bucketItems.length === 0) {
+            alert('Please add at least one item to the invoice');
+            return;
+        }
+
+        const invoiceData = {
+            customer_name: document.getElementById('customerName').value,
+            customer_address: document.getElementById('customerAddress').value,
+            customer_phone: document.getElementById('customerPhone').value,
+            customer_gstin: document.getElementById('customerGSTIN').value,
+            payment_method: document.getElementById('paymentMethod').value,
+            items: bucketItems,
+            total_amount: parseFloat(document.getElementById('grandTotal').textContent.replace('₹', '')),
+            total_gst: parseFloat(document.getElementById('gstTotal').textContent.replace('₹', ''))
+        };
+
+        // Send to server
+        fetch('/generate_invoice', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(invoiceData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                window.location.href = `/download_invoice/${data.invoice_number}`;
+                // Clear the form and bucket
+                document.getElementById('invoiceForm').reset();
+                bucketItems = [];
+                updateBucketTable();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error generating invoice. Please try again.');
+        });
+    });
+});
+</script>
+{% endblock %} 

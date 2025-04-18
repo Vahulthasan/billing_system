@@ -1,19 +1,9 @@
+# core_imports.py
 import os
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
-import stripe
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.application import MIMEApplication
-import requests
-from flask_mail import Mail, Message
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import io
 import jwt
@@ -21,9 +11,28 @@ from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from io import BytesIO
 import sqlite3
-from dotenv import load_dotenv
+from models import db, init_db, User, Product, Invoice, InvoiceItem, InvoicePDF
 
-from models import db, User, Product, Invoice, InvoiceItem
+# email_imports.py
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
+from flask_mail import Mail, Message
+
+# pdf_imports.py
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+
+# utility_imports.py
+import stripe
+import requests
+from functools import wraps
+from io import BytesIO
+import sqlite3
 
 # Load environment variables
 load_dotenv()
@@ -36,23 +45,21 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 INSTANCE_PATH = os.path.join(BASE_DIR, 'instance')
 os.makedirs(INSTANCE_PATH, exist_ok=True)
 
+# Initialize Flask app
 app = Flask(__name__)
 
 # Configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
-
-# Database configuration
-if os.getenv('RENDER'):
-    # Use SQLite for Render deployment
-    db_path = os.path.join(os.getcwd(), 'instance', 'billing_system.db')
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
-else:
-    # Local development database
-    db_path = os.path.join(INSTANCE_PATH, 'billing_system.db')
-    app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
-
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///billing.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Initialize extensions
+init_db(app)
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+
+# Import models after db initialization
+from models import User, Product, Invoice, InvoiceItem, InvoicePDF
 
 # Stripe (Optional)
 stripe.api_key = 'your_stripe_secret_key'
@@ -66,10 +73,6 @@ app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USE_SSL'] = False
 mail = Mail(app)
 
-# Login manager
-login_manager = LoginManager(app)
-login_manager.login_view = "login"
-
 # Windsurf Token Configuration
 WINDSURF_TOKEN = 'your-token-here'
 
@@ -82,9 +85,6 @@ SMTP_SERVER = 'smtp.gmail.com'
 SMTP_PORT = 587
 EMAIL_USERNAME = 'your-email@gmail.com'
 EMAIL_PASSWORD = 'your-app-password'
-
-# Initialize extensions
-db.init_app(app)
 
 # User loader
 @login_manager.user_loader
@@ -106,14 +106,26 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
+        
+        # Debug print
+        print(f"Login attempt - Username: {username}")
+        
         user = User.query.filter_by(username=username).first()
+        if user is None:
+            flash('Invalid username or password', 'danger')
+            print(f"User not found: {username}")
+            return render_template('login.html')
+            
         if user and user.check_password(password):
             login_user(user)
             flash('Logged in successfully!', 'success')
+            print(f"Successful login: {username}")
             next_page = request.args.get('next')
             return redirect(next_page or url_for('index'))
         else:
             flash('Invalid username or password', 'danger')
+            print(f"Invalid password for user: {username}")
+    
     return render_template('login.html')
 
 @app.route('/logout')
@@ -165,88 +177,125 @@ def send_email(to_email, subject, body, attachment=None):
         print(f"Error sending email: {str(e)}")
         return False
 
-@app.route('/generate_bill', methods=['POST'])
+from generate_invoice import InvoiceGenerator
+
+# Initialize the invoice generator
+invoice_generator = InvoiceGenerator()
+
+@app.route('/generate_invoice', methods=['POST'])
 @login_required
-def generate_bill():
-    if request.method == 'POST':
-        try:
-            product_ids = request.form.getlist('products')
-            quantities = request.form.getlist('quantities')
-            payment_method = request.form.get('payment_method')
-            phone_number = request.form.get('phone_number')
-            
-            # Get customer details from form
-            customer_name = request.form.get('customer_name')
-            customer_address = request.form.get('customer_address')
-            customer_gstin = request.form.get('customer_gstin')
+def generate_invoice():
+    try:
+        data = request.get_json()
+        
+        # Create new invoice
+        invoice = Invoice(
+            invoice_number=generate_invoice_number(),
+            date=datetime.now(),
+            customer_name=data['customer_name'],
+            customer_address=data['customer_address'],
+            customer_gstin=data.get('customer_gstin', ''),
+            customer_phone=data.get('customer_phone', ''),
+            payment_method=data['payment_method'],
+            user_id=current_user.id,
+            status='PENDING',
+            total_amount=float(data['total_amount']),
+            gst_amount=float(data['total_gst'])
+        )
+        db.session.add(invoice)
+        db.session.flush()  # Get the invoice ID
 
-            if not all([product_ids, quantities, payment_method, customer_name, customer_address]):
-                flash('Please fill in all required fields', 'danger')
-                return redirect(url_for('index'))
-
-            # Generate invoice number
-            last_invoice = Invoice.query.order_by(Invoice.id.desc()).first()
-            invoice_number = f"INV{datetime.now().year}-{str(last_invoice.id + 1).zfill(3) if last_invoice else '001'}"
-
-            # Calculate total amount
-            total_amount = 0
-            invoice_items = []
-
-            for product_id, quantity in zip(product_ids, quantities):
-                product = Product.query.get(product_id)
-                if product and int(quantity) > 0:
-                    if product.quantity < int(quantity):
-                        flash(f'Not enough stock for {product.name}', 'danger')
-                        return redirect(url_for('index'))
-                    
-                    total_amount += product.price * int(quantity)
-                    invoice_items.append({
-                        'product': product,
-                        'quantity': int(quantity)
-                    })
-
-            # Create invoice
-            invoice = Invoice(
-                invoice_number=invoice_number,
-                customer_name=customer_name,
-                customer_address=customer_address,
-                customer_gstin=customer_gstin,
-                total_amount=total_amount,
-                payment_method=payment_method,
-                status='Pending',
-                user_id=current_user.id
+        # Add invoice items
+        for item in data['items']:
+            invoice_item = InvoiceItem(
+                invoice_id=invoice.id,
+                product_id=item['product_id'],
+                product_name=item['name'],
+                quantity=item['quantity'],
+                unit_price=float(item['price']),
+                gst_rate=float(item['gst_rate']),
+                subtotal=float(item['subtotal']),
+                gst_amount=float(item['gst_amount']),
+                total=float(item['total'])
             )
-            db.session.add(invoice)
-            db.session.commit()
+            db.session.add(invoice_item)
 
-            # Create invoice items and update stock
-            for item in invoice_items:
-                invoice_item = InvoiceItem(
-                    invoice_id=invoice.id,
-                    product_id=item['product'].id,
-                    quantity=item['quantity']
-                )
-                db.session.add(invoice_item)
-                
-                # Update product stock
-                item['product'].quantity -= item['quantity']
-                db.session.add(item['product'])
+            # Update product stock
+            product = Product.query.get(item['product_id'])
+            if product:
+                product.quantity -= item['quantity']
+                db.session.add(product)
 
-            db.session.commit()
+        # Generate PDF
+        invoice_generator.generate_invoice_pdf(invoice.id)
 
-            # Send notifications
-            if phone_number:
-                send_sms_notification(phone_number, invoice)
-            
-            send_email_notification(current_user.email, invoice)
+        # Commit all changes
+        db.session.commit()
 
-            flash('Invoice generated successfully!', 'success')
-            return redirect(url_for('view_invoice', invoice_id=invoice.id))
+        return jsonify({
+            'status': 'success',
+            'message': 'Invoice generated successfully',
+            'invoice_number': invoice.invoice_number
+        })
 
-        except Exception as e:
-            db.session.rollback()
-            flash(f'Error generating invoice: {str(e)}', 'danger')
-            return redirect(url_for('index'))
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/download_invoice/<invoice_number>')
+@login_required
+def download_invoice(invoice_number):
+    try:
+        invoice = Invoice.query.filter_by(invoice_number=invoice_number).first()
+        if not invoice:
+            return "Invoice not found", 404
+
+        # Check if user has access to this invoice
+        if invoice.user_id != current_user.id:
+            return "Unauthorized access", 403
+
+        # Get or generate PDF
+        invoice_pdf = InvoicePDF.query.filter_by(invoice_id=invoice.id).first()
+        if not invoice_pdf:
+            # Generate new PDF if it doesn't exist
+            pdf_data = invoice_generator.generate_invoice_pdf(invoice.id)
+        else:
+            pdf_data = invoice_pdf.pdf_data
+
+        return send_file(
+            BytesIO(pdf_data),
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f"invoice_{invoice.invoice_number}.pdf"
+        )
+
+    except Exception as e:
+        return str(e), 500
+
+@app.route('/regenerate_invoice/<invoice_number>')
+@login_required
+def regenerate_invoice(invoice_number):
+    try:
+        invoice = Invoice.query.filter_by(invoice_number=invoice_number).first()
+        if not invoice:
+            return "Invoice not found", 404
+
+        # Check if user has access to this invoice
+        if invoice.user_id != current_user.id:
+            return "Unauthorized access", 403
+
+        # Regenerate PDF
+        invoice_generator.generate_invoice_pdf(invoice.id)
+        
+        flash('Invoice regenerated successfully!', 'success')
+        return redirect(url_for('view_invoice', invoice_id=invoice.id))
+
+    except Exception as e:
+        flash(f'Error regenerating invoice: {str(e)}', 'danger')
+        return redirect(url_for('view_invoice', invoice_id=invoice.id))
 
 @app.route('/invoices')
 @login_required
@@ -466,20 +515,20 @@ def send_email_notification(email, invoice):
 
         # Add totals
         p.setFont("Helvetica-Bold", 12)
-        p.drawString(400, y-20, f"Subtotal: ₹{invoice.subtotal:.2f}")
-        p.drawString(400, y-40, f"GST: ₹{invoice.gst_amount:.2f}")
-        p.drawString(400, y-60, f"Total: ₹{invoice.total:.2f}")
+        p.drawString(400, y - 40, f"Subtotal: ₹{invoice.subtotal:.2f}")
+        p.drawString(400, y - 60, f"GST: ₹{invoice.gst_amount:.2f}")
+        p.drawString(400, y - 80, f"Total: ₹{invoice.total:.2f}")
 
         # Add payment method and status
-        p.drawString(50, y-100, f"Payment Method: {invoice.payment_method}")
-        p.drawString(50, y-120, "Status: Paid")
+        p.drawString(50, y - 100, f"Payment Method: {invoice.payment_method}")
+        p.drawString(50, y - 120, "Status: Paid")
 
         # Add terms and conditions
         p.setFont("Helvetica", 10)
-        p.drawString(50, y-160, "Terms and Conditions:")
-        p.drawString(50, y-180, "1. Payment is due within 30 days")
-        p.drawString(50, y-200, "2. Please include invoice number in payment reference")
-        p.drawString(50, y-220, "3. For any queries, contact accounts@company.com")
+        p.drawString(50, y - 160, "Terms and Conditions:")
+        p.drawString(50, y - 180, "1. Payment is due within 30 days")
+        p.drawString(50, y - 200, "2. Please include invoice number in payment reference")
+        p.drawString(50, y - 220, "3. For any queries, contact accounts@company.com")
 
         p.save()
         buffer.seek(0)
@@ -527,7 +576,7 @@ def send_sms_notification(phone_number, invoice):
         print(f"Error sending SMS: {str(e)}")
         return False
 
-def generate_invoice_pdf(invoice_id):
+def generate_invoice_pdf(invoice, items):
     """Generate a professional PDF invoice using SQLite data"""
     conn = sqlite3.connect('instance/billing_system.db')
     cursor = conn.cursor()
@@ -539,10 +588,10 @@ def generate_invoice_pdf(invoice_id):
                i.subtotal, i.gst_amount, i.total
         FROM invoice i
         WHERE i.id = ?
-    """, (invoice_id,))
-    invoice = cursor.fetchone()
+    """, (invoice.id,))
+    invoice_details = cursor.fetchone()
 
-    if not invoice:
+    if not invoice_details:
         print("Invoice not found")
         return None
 
@@ -552,115 +601,180 @@ def generate_invoice_pdf(invoice_id):
         FROM invoice_item ii
         JOIN product p ON ii.product_id = p.id
         WHERE ii.invoice_id = ?
-    """, (invoice_id,))
-    items = cursor.fetchall()
+    """, (invoice.id,))
+    existing_items = cursor.fetchall()
 
     conn.close()
 
     # Generate PDF
     buffer = BytesIO()
-    p = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
-
-    # Add company header with logo
-    p.setFont("Helvetica-Bold", 20)
-    p.drawString(50, height - 50, "Your Company Name")
-    p.setFont("Helvetica", 12)
-    p.drawString(50, height - 70, "123 Business Street")
-    p.drawString(50, height - 85, "City, State - 123456")
-    p.drawString(50, height - 100, "GSTIN: 12ABCDE1234F1Z5")
-    p.drawString(50, height - 115, "Phone: +91 9876543210")
-    p.drawString(50, height - 130, "Email: contact@company.com")
-
-    # Add invoice details box
-    p.setFillColor(colors.lightgrey)
-    p.rect(width - 200, height - 100, 150, 80, fill=1)
-    p.setFillColor(colors.black)
-    p.setFont("Helvetica-Bold", 14)
-    p.drawString(width - 190, height - 50, f"Invoice #{invoice[1]}")
-    p.setFont("Helvetica", 12)
-    p.drawString(width - 190, height - 70, f"Date: {invoice[6].strftime('%d-%m-%Y')}")
-    p.drawString(width - 190, height - 85, f"Status: Paid")
-
-    # Add customer details
-    p.setFont("Helvetica-Bold", 14)
-    p.drawString(50, height - 180, "Bill To:")
-    p.setFont("Helvetica", 12)
-    p.drawString(50, height - 200, invoice[2])
-    p.drawString(50, height - 215, invoice[3])
-    p.drawString(50, height - 230, f"GSTIN: {invoice[4]}")
-    p.drawString(50, height - 245, f"Phone: {invoice[5]}")
-
-    # Add items table header
-    p.setFont("Helvetica-Bold", 12)
-    p.drawString(50, height - 300, "Item")
-    p.drawString(200, height - 300, "Quantity")
-    p.drawString(300, height - 300, "Unit Price")
-    p.drawString(400, height - 300, "GST Rate")
-    p.drawString(500, height - 300, "Total")
-
-    # Draw table lines
-    p.line(50, height - 310, width - 50, height - 310)
-    p.line(50, height - 310, 50, height - 450)
-    p.line(200, height - 310, 200, height - 450)
-    p.line(300, height - 310, 300, height - 450)
-    p.line(400, height - 310, 400, height - 450)
-    p.line(500, height - 310, 500, height - 450)
-    p.line(width - 50, height - 310, width - 50, height - 450)
-
-    # Add items
-    y = height - 330
-    p.setFont("Helvetica", 12)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
+    
+    # Container for the 'Flowable' objects
+    elements = []
+    
+    # Styles
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='RightAlign', alignment=2))
+    styles.add(ParagraphStyle(name='CenterAlign', alignment=1))
+    styles.add(ParagraphStyle(
+        name='CustomTitle',
+        fontSize=24,
+        spaceAfter=30,
+        alignment=1
+    ))
+    
+    # Add company logo/header
+    elements.append(Paragraph("Your Store Name", styles['CustomTitle']))
+    
+    # Add company details
+    company_info = [
+        "123 Business Street, City, State - 123456",
+        "GSTIN: 12ABCDE1234F1Z5",
+        "Phone: +91 9876543210",
+        "Email: contact@company.com",
+        "Website: www.yourcompany.com"
+    ]
+    for info in company_info:
+        elements.append(Paragraph(info, styles['CenterAlign']))
+    
+    elements.append(Spacer(1, 20))
+    
+    # Add invoice header
+    invoice_header = [
+        [Paragraph(f"<b>Invoice #{invoice_details[1]}</b>", styles['RightAlign']),
+         Paragraph(f"<b>Date:</b> {invoice_details[6].strftime('%d-%m-%Y')}", styles['RightAlign'])],
+    ]
+    invoice_header_table = Table(invoice_header, colWidths=[doc.width/2]*2)
+    invoice_header_table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 20),
+    ]))
+    elements.append(invoice_header_table)
+    elements.append(Spacer(1, 20))
+    
+    # Add billing details
+    billing_data = [
+        ["BILL TO:", "SHIP TO:"],
+        [invoice_details[2], invoice_details[2]],  # Customer name
+        [invoice_details[3], invoice_details[3]],  # Address
+        [f"GSTIN: {invoice_details[4]}", ""],
+        [f"Phone: {invoice_details[5]}", ""],
+    ]
+    billing_table = Table(billing_data, colWidths=[doc.width/2]*2)
+    billing_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+    ]))
+    elements.append(billing_table)
+    elements.append(Spacer(1, 20))
+    
+    # Add items table
+    table_data = [["Item", "Quantity", "Unit Price", "GST Rate", "Total"]]
     for item in items:
-        p.drawString(50, y, item[0])
-        p.drawString(200, y, str(item[1]))
-        p.drawString(300, y, f"₹{item[2]:.2f}")
-        p.drawString(400, y, f"{item[3]}%")
-        p.drawString(500, y, f"₹{item[4]:.2f}")
-        y -= 20
-
+        table_data.append([
+            item['name'],
+            str(item['quantity']),
+            f"₹{item['price']:.2f}",
+            f"{item['gst_rate']}%",
+            f"₹{item['total']:.2f}"
+        ])
+    
     # Add totals
-    p.setFont("Helvetica-Bold", 12)
-    p.drawString(400, y - 40, f"Subtotal: ₹{invoice[8]:.2f}")
-    p.drawString(400, y - 60, f"GST: ₹{invoice[9]:.2f}")
-    p.drawString(400, y - 80, f"Total: ₹{invoice[10]:.2f}")
-
-    # Add payment method
-    p.drawString(50, y - 120, f"Payment Method: {invoice[7]}")
-
+    table_data.extend([
+        ["", "", "", "Subtotal:", f"₹{invoice_details[8]:.2f}"],
+        ["", "", "", "GST:", f"₹{invoice_details[9]:.2f}"],
+        ["", "", "", "Total:", f"₹{invoice_details[10]:.2f}"]
+    ])
+    
+    # Create items table
+    items_table = Table(table_data, colWidths=[doc.width/3, doc.width/6, doc.width/6, doc.width/6, doc.width/6])
+    items_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, -3), (-1, -1), colors.lightgrey),
+        ('FONTNAME', (0, -3), (-1, -1), 'Helvetica-Bold'),
+        ('ALIGN', (-2, -3), (-1, -1), 'RIGHT'),
+        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+    ]))
+    elements.append(items_table)
+    elements.append(Spacer(1, 20))
+    
+    # Add payment details
+    payment_info = [
+        [Paragraph("<b>Payment Method:</b>", styles['Normal']), invoice_details[7]],
+        [Paragraph("<b>Payment Status:</b>", styles['Normal']), "Paid"],
+    ]
+    payment_table = Table(payment_info, colWidths=[doc.width/4, doc.width*3/4])
+    payment_table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(payment_table)
+    elements.append(Spacer(1, 20))
+    
     # Add terms and conditions
-    p.setFont("Helvetica", 10)
-    p.drawString(50, y - 160, "Terms and Conditions:")
-    p.drawString(50, y - 175, "1. Payment is due within 30 days")
-    p.drawString(50, y - 190, "2. Please include invoice number in payment reference")
-    p.drawString(50, y - 205, "3. For any queries, contact accounts@company.com")
-
+    elements.append(Paragraph("<b>Terms and Conditions:</b>", styles['Normal']))
+    terms = [
+        "1. Payment is due within 30 days",
+        "2. Please include invoice number in payment reference",
+        "3. For any queries, contact accounts@company.com",
+        "4. Goods once sold cannot be returned",
+        "5. All disputes are subject to local jurisdiction"
+    ]
+    for term in terms:
+        elements.append(Paragraph(term, styles['Normal']))
+    
     # Add footer
-    p.setFont("Helvetica", 8)
-    p.drawString(50, 50, "Thank you for your business!")
-    p.drawString(50, 35, "This is a computer-generated invoice. No signature required.")
-
-    p.save()
+    elements.append(Spacer(1, 30))
+    elements.append(Paragraph("Thank you for your business!", styles['CenterAlign']))
+    elements.append(Paragraph("This is a computer-generated invoice. No signature required.", styles['CenterAlign']))
+    
+    # Build PDF
+    doc.build(elements)
     buffer.seek(0)
     return buffer
 
-@app.route('/download_invoice/<int:invoice_id>')
+@app.route('/invoice_history')
 @login_required
-def download_invoice(invoice_id):
-    invoice = Invoice.query.get_or_404(invoice_id)
-    if invoice.user_id != current_user.id:
+def invoice_history():
+    # Get all invoices for the current user with their PDFs
+    invoices = Invoice.query.filter_by(user_id=current_user.id).order_by(Invoice.date.desc()).all()
+    
+    # Prepare data for template
+    invoice_data = []
+    for invoice in invoices:
+        pdfs = InvoicePDF.query.filter_by(invoice_id=invoice.id).order_by(InvoicePDF.created_at.desc()).all()
+        invoice_data.append({
+            'invoice': invoice,
+            'pdfs': pdfs
+        })
+    
+    return render_template('invoice_history.html', invoice_data=invoice_data)
+
+@app.route('/view_saved_pdf/<int:pdf_id>')
+@login_required
+def view_saved_pdf(pdf_id):
+    invoice_pdf = InvoicePDF.query.get_or_404(pdf_id)
+    
+    # Check if the user has access to this invoice
+    if invoice_pdf.invoice.user_id != current_user.id:
         flash('Unauthorized access', 'danger')
-        return redirect(url_for('index'))
-
-    buffer = generate_invoice_pdf(invoice_id)
-    if not buffer:
-        flash('Error generating invoice', 'danger')
-        return redirect(url_for('view_invoice', invoice_id=invoice_id))
-
+        return redirect(url_for('invoice_history'))
+    
     return send_file(
-        buffer,
-        as_attachment=True,
-        download_name=f"invoice_{invoice.invoice_number}.pdf",
+        BytesIO(invoice_pdf.pdf_data),
+        download_name=invoice_pdf.file_name,
         mimetype="application/pdf"
     )
 
@@ -781,31 +895,150 @@ def create_test_invoice():
 
         return 'Test invoice generated and saved as test_invoice.pdf'
 
-# Initialize DB and seed data if not present
-with app.app_context():
-    db.create_all()
+@app.route('/create_invoice')
+@login_required
+def create_invoice():
+    products = Product.query.all()
+    return render_template('create_invoice.html', products=products)
 
-    if not User.query.first():
-        test_user = User(username='admin', password='admin123')
-        db.session.add(test_user)
-
-    if not Product.query.first():
-        products = [
-            Product(name='Mouse', price=500, gst_rate=18),
-            Product(name='Keyboard', price=1000, gst_rate=18),
-            Product(name='Monitor', price=8000, gst_rate=18),
-        ]
-        db.session.add_all(products)
-
-    db.session.commit()
-
-if __name__ == '__main__':
+def create_tables():
     with app.app_context():
         db.create_all()
-        if os.getenv('RENDER'):
-            # Create test data only in development
-            print(create_test_invoice())
-    # Use production server when deployed
+
+# Create tables before running the app
+create_tables()
+
+def generate_invoice_number():
+    """Generate a unique invoice number based on the current year and a sequential number"""
+    current_year = datetime.now().year
+    last_invoice = Invoice.query.filter(
+        Invoice.invoice_number.like(f'INV{current_year}-%')
+    ).order_by(Invoice.id.desc()).first()
+
+    if last_invoice:
+        # Extract the sequential number from the last invoice number
+        last_seq = int(last_invoice.invoice_number.split('-')[1])
+        next_seq = last_seq + 1
+    else:
+        next_seq = 1
+
+    return f'INV{current_year}-{str(next_seq).zfill(4)}'
+
+@app.route('/test_invoice')
+@login_required
+def test_invoice():
+    try:
+        # Create a test product if it doesn't exist
+        product = Product.query.filter_by(name='Test Product').first()
+        if not product:
+            product = Product(
+                name='Test Product',
+                price=1000.00,
+                gst_rate=18.00,
+                quantity=100
+            )
+            db.session.add(product)
+            db.session.commit()
+
+        # Create test invoice data
+        invoice_data = {
+            'customer_name': 'Test Customer',
+            'customer_address': '123 Test Street, Test City - 123456',
+            'customer_gstin': 'TEST1234567890',
+            'customer_phone': '9876543210',
+            'payment_method': 'Cash',
+            'total_amount': 1180.00,  # 1000 + 18% GST
+            'total_gst': 180.00,
+            'items': [{
+                'product_id': product.id,
+                'name': product.name,
+                'quantity': 1,
+                'price': product.price,
+                'gst_rate': product.gst_rate,
+                'subtotal': product.price,
+                'gst_amount': (product.price * product.gst_rate / 100),
+                'total': product.price * (1 + product.gst_rate / 100)
+            }]
+        }
+
+        # Create new invoice
+        invoice = Invoice(
+            invoice_number=generate_invoice_number(),
+            date=datetime.now(),
+            customer_name=invoice_data['customer_name'],
+            customer_address=invoice_data['customer_address'],
+            customer_gstin=invoice_data['customer_gstin'],
+            customer_phone=invoice_data['customer_phone'],
+            payment_method=invoice_data['payment_method'],
+            user_id=current_user.id,
+            status='PENDING',
+            total_amount=invoice_data['total_amount'],
+            gst_amount=invoice_data['total_gst']
+        )
+        db.session.add(invoice)
+        db.session.flush()
+
+        # Add invoice items
+        for item in invoice_data['items']:
+            invoice_item = InvoiceItem(
+                invoice_id=invoice.id,
+                product_id=item['product_id'],
+                product_name=item['name'],
+                quantity=item['quantity'],
+                unit_price=float(item['price']),
+                gst_rate=float(item['gst_rate']),
+                subtotal=float(item['subtotal']),
+                gst_amount=float(item['gst_amount']),
+                total=float(item['total'])
+            )
+            db.session.add(invoice_item)
+
+        # Generate PDF
+        pdf_data = invoice_generator.generate_invoice_pdf(invoice.id)
+        
+        # Commit all changes
+        db.session.commit()
+
+        # Return the PDF
+        return send_file(
+            BytesIO(pdf_data),
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f"invoice_{invoice.invoice_number}.pdf"
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error generating test invoice: {str(e)}', 'danger')
+        return redirect(url_for('index'))
+
+def create_sample_products():
+    with app.app_context():
+        # Check if products already exist
+        if Product.query.first() is None:
+            # Create sample products
+            products = [
+                Product(name='Laptop', price=45000.00, gst_rate=18, quantity=10),
+                Product(name='Mouse', price=500.00, gst_rate=18, quantity=50),
+                Product(name='Keyboard', price=1000.00, gst_rate=18, quantity=30),
+                Product(name='Monitor', price=15000.00, gst_rate=18, quantity=15),
+                Product(name='Printer', price=12000.00, gst_rate=18, quantity=8),
+                Product(name='USB Drive', price=800.00, gst_rate=18, quantity=100)
+            ]
+            db.session.add_all(products)
+            db.session.commit()
+            print("Sample products created successfully!")
+
+@app.route('/initialize')
+def initialize_db():
+    try:
+        create_tables()
+        create_sample_products()
+        return "Database initialized with sample products!"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+if __name__ == '__main__':
     if os.getenv('RENDER'):
         app.run()
     else:

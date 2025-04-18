@@ -1,0 +1,79 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h2 class="mb-3">
+                <i class="fas fa-history me-2"></i>Invoice History
+            </h2>
+            <div class="card">
+                <div class="card-body">
+                    {% if invoice_data %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Invoice #</th>
+                                    <th>Customer</th>
+                                    <th>Date</th>
+                                    <th>Amount</th>
+                                    <th>Generated PDFs</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for data in invoice_data %}
+                                <tr>
+                                    <td>{{ data.invoice.invoice_number }}</td>
+                                    <td>{{ data.invoice.customer_name }}</td>
+                                    <td>{{ data.invoice.date.strftime('%d-%m-%Y') }}</td>
+                                    <td>₹{{ data.invoice.total }}</td>
+                                    <td>
+                                        <div class="dropdown">
+                                            <button class="btn btn-secondary btn-sm dropdown-toggle" type="button" 
+                                                    data-bs-toggle="dropdown" aria-expanded="false">
+                                                {{ data.pdfs|length }} PDF(s)
+                                            </button>
+                                            <ul class="dropdown-menu">
+                                                {% for pdf in data.pdfs %}
+                                                <li>
+                                                    <a class="dropdown-item" href="{{ url_for('view_saved_pdf', pdf_id=pdf.id) }}" target="_blank">
+                                                        <i class="fas fa-file-pdf me-2"></i>
+                                                        {{ pdf.created_at.strftime('%d-%m-%Y %H:%M') }}
+                                                        <small class="text-muted">({{ (pdf.file_size / 1024)|round(1) }} KB)</small>
+                                                    </a>
+                                                </li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="{{ url_for('view_invoice', invoice_id=data.invoice.id) }}" 
+                                               class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            <a href="{{ url_for('download_invoice', invoice_id=data.invoice.id) }}" 
+                                               class="btn btn-sm btn-outline-success">
+                                                <i class="fas fa-download"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-file-invoice fa-3x mb-3 text-muted"></i>
+                        <p class="lead">No invoices found</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
