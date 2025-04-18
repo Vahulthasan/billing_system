@@ -1039,12 +1039,13 @@ def initialize_db():
         return f"Error: {str(e)}"
 
 if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
     if os.getenv('RENDER'):
         # Running on Render.com
-        app.run(host='0.0.0.0')
+        app.run(host='0.0.0.0', port=port)
     else:
         # Local development
-        app.run(host='0.0.0.0', port=5000, debug=True)
+        app.run(host='0.0.0.0', port=port, debug=True)
 
 # Initialize database tables
 with app.app_context():
