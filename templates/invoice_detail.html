@@ -1,0 +1,78 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h3 class="mb-0">Invoice #{{ invoice.invoice_number }}</h3>
+            <div>
+                <a href="{{ url_for('generate_bill') }}?invoice_id={{ invoice.id }}" class="btn btn-secondary">
+                    <i class="fas fa-download"></i> Download PDF
+                </a>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row mb-4">
+                <div class="col-sm-6">
+                    <h6 class="mb-3">Customer Details:</h6>
+                    <div><strong>Username:</strong> {{ invoice.user.username }}</div>
+                    <div><strong>Invoice Date:</strong> {{ invoice.date_created.strftime('%Y-%m-%d %H:%M') }}</div>
+                </div>
+                <div class="col-sm-6">
+                    <h6 class="mb-3">Payment Details:</h6>
+                    <div>
+                        <strong>Status:</strong>
+                        <span class="badge {% if invoice.payment_status == 'paid' %}bg-success{% else %}bg-warning{% endif %}">
+                            {{ invoice.payment_status }}
+                        </span>
+                    </div>
+                    <div><strong>Method:</strong> {{ invoice.payment_method|title }}</div>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Quantity</th>
+                            <th>Price</th>
+                            <th>Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in invoice.items %}
+                        <tr>
+                            <td>{{ item.product.name }}</td>
+                            <td>{{ item.quantity }}</td>
+                            <td>₹{{ "%.2f"|format(item.price) }}</td>
+                            <td>₹{{ "%.2f"|format(item.subtotal) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="3" class="text-end"><strong>Subtotal:</strong></td>
+                            <td>₹{{ "%.2f"|format(invoice.subtotal) }}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="3" class="text-end"><strong>Tax (18%):</strong></td>
+                            <td>₹{{ "%.2f"|format(invoice.tax) }}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="3" class="text-end"><strong>Total:</strong></td>
+                            <td><strong>₹{{ "%.2f"|format(invoice.total) }}</strong></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-3">
+        <a href="{{ url_for('invoices') }}" class="btn btn-primary">
+            <i class="fas fa-arrow-left"></i> Back to Invoices
+        </a>
+    </div>
+</div>
+{% endblock %} 

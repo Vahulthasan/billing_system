@@ -1,0 +1,24 @@
+<!-- templates/add_product.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add Product</title>
+</head>
+<body>
+    <h2>Add New Product</h2>
+    <form method="POST">
+        <label>Product Name:</label><br>
+        <input type="text" name="name" required><br><br>
+
+        <label>Price:</label><br>
+        <input type="number" name="price" step="0.01" required><br><br>
+
+        <label>Quantity:</label><br>
+        <input type="number" name="quantity" required><br><br>
+
+        <button type="submit">Add Product</button>
+    </form>
+    <br>
+    <a href="{{ url_for('index') }}">← Back to Home</a>
+</body>
+</html>

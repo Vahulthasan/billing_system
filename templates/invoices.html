@@ -1,0 +1,55 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Your Invoices</h2>
+    
+    {% if invoices %}
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Invoice Number</th>
+                    <th>Date</th>
+                    <th>Total</th>
+                    <th>Payment Status</th>
+                    <th>Payment Method</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for invoice in invoices %}
+                <tr>
+                    <td>{{ invoice.invoice_number }}</td>
+                    <td>{{ invoice.date_created.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>₹{{ "%.2f"|format(invoice.total) }}</td>
+                    <td>
+                        <span class="badge {% if invoice.payment_status == 'paid' %}bg-success{% else %}bg-warning{% endif %}">
+                            {{ invoice.payment_status }}
+                        </span>
+                    </td>
+                    <td>{{ invoice.payment_method|title }}</td>
+                    <td>
+                        <a href="{{ url_for('view_invoice', invoice_id=invoice.id) }}" class="btn btn-sm btn-info">
+                            <i class="fas fa-eye"></i> View
+                        </a>
+                        <a href="{{ url_for('generate_bill') }}?invoice_id={{ invoice.id }}" class="btn btn-sm btn-secondary">
+                            <i class="fas fa-download"></i> Download PDF
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        You don't have any invoices yet.
+    </div>
+    {% endif %}
+    
+    <a href="{{ url_for('index') }}" class="btn btn-primary">
+        <i class="fas fa-plus"></i> Create New Invoice
+    </a>
+</div>
+{% endblock %} 
