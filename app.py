@@ -267,14 +267,19 @@ def view_invoice(invoice_id):
 @login_required
 def add_product():
     if request.method == 'POST':
-        name = request.form['name']
-        price = float(request.form['price'])
-        gst_rate = float(request.form['gst_rate'])
-        new_product = Product(name=name, price=price, gst_rate=gst_rate)
-        db.session.add(new_product)
-        db.session.commit()
-        flash('Product added successfully!', 'success')
-        return redirect(url_for('index'))
+        try:
+            name = request.form['name']
+            price = float(request.form['price'])
+            gst_rate = float(request.form['gst_rate'])
+            new_product = Product(name=name, price=price, gst_rate=gst_rate)
+            db.session.add(new_product)
+            db.session.commit()
+            flash('Product added successfully!', 'success')
+            return redirect(url_for('index'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error adding product: {str(e)}', 'danger')
+            return redirect(url_for('add_product'))
     return render_template('add_product.html')
 
 @app.route('/edit_product/<int:product_id>', methods=['GET', 'POST'])
@@ -283,25 +288,31 @@ def edit_product(product_id):
     product = Product.query.get_or_404(product_id)
 
     if request.method == 'POST':
-        product.name = request.form['name']
-        product.price = float(request.form['price'])
-        product.quantity = int(request.form['quantity'])
-        db.session.commit()
-        flash('Product updated successfully!', 'success')
-        return redirect(url_for('index'))
+        try:
+            product.name = request.form['name']
+            product.price = float(request.form['price'])
+            product.gst_rate = float(request.form['gst_rate'])
+            db.session.commit()
+            flash('Product updated successfully!', 'success')
+            return redirect(url_for('index'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating product: {str(e)}', 'danger')
+            return redirect(url_for('edit_product', product_id=product_id))
 
     return render_template('edit_product.html', product=product)
 
 @app.route('/delete_product/<int:product_id>', methods=['POST'])
 @login_required
 def delete_product(product_id):
-    product = Product.query.get(product_id)
-    if product:
+    try:
+        product = Product.query.get_or_404(product_id)
         db.session.delete(product)
         db.session.commit()
         flash('Product deleted successfully!', 'success')
-    else:
-        flash('Product not found!', 'danger')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deleting product: {str(e)}', 'danger')
     return redirect(url_for('index'))
 
 def token_required(f):
