@@ -270,8 +270,7 @@ def add_product():
         name = request.form['name']
         price = float(request.form['price'])
         gst_rate = float(request.form['gst_rate'])
-        quantity = int(request.form['quantity'])
-        new_product = Product(name=name, price=price, gst_rate=gst_rate, quantity=quantity)
+        new_product = Product(name=name, price=price, gst_rate=gst_rate)
         db.session.add(new_product)
         db.session.commit()
         flash('Product added successfully!', 'success')
