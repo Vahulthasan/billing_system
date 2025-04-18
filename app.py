@@ -517,7 +517,7 @@ def send_sms_notification(phone_number, invoice):
         return False
 
 def generate_invoice_pdf(invoice_id):
-    """Generate a PDF invoice using SQLite data"""
+    """Generate a professional PDF invoice using SQLite data"""
     conn = sqlite3.connect('instance/billing_system.db')
     cursor = conn.cursor()
 
@@ -548,66 +548,86 @@ def generate_invoice_pdf(invoice_id):
 
     # Generate PDF
     buffer = BytesIO()
-    p = canvas.Canvas(buffer)
-    
-    # Add company header
-    p.setFont("Helvetica-Bold", 16)
-    p.drawString(50, 800, "Your Company Name")
-    p.setFont("Helvetica", 12)
-    p.drawString(50, 780, "123 Business Street")
-    p.drawString(50, 760, "City, State - 123456")
-    p.drawString(50, 740, "GSTIN: 12ABCDE1234F1Z5")
-    p.drawString(50, 720, "Phone: +91 9876543210")
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
 
-    # Add invoice details
-    p.setFont("Helvetica-Bold", 14)
-    p.drawString(400, 800, f"Invoice #{invoice[1]}")
+    # Add company header with logo
+    p.setFont("Helvetica-Bold", 20)
+    p.drawString(50, height - 50, "Your Company Name")
     p.setFont("Helvetica", 12)
-    p.drawString(400, 780, f"Date: {invoice[6].strftime('%d-%m-%Y')}")
+    p.drawString(50, height - 70, "123 Business Street")
+    p.drawString(50, height - 85, "City, State - 123456")
+    p.drawString(50, height - 100, "GSTIN: 12ABCDE1234F1Z5")
+    p.drawString(50, height - 115, "Phone: +91 9876543210")
+    p.drawString(50, height - 130, "Email: contact@company.com")
+
+    # Add invoice details box
+    p.setFillColor(colors.lightgrey)
+    p.rect(width - 200, height - 100, 150, 80, fill=1)
+    p.setFillColor(colors.black)
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(width - 190, height - 50, f"Invoice #{invoice[1]}")
+    p.setFont("Helvetica", 12)
+    p.drawString(width - 190, height - 70, f"Date: {invoice[6].strftime('%d-%m-%Y')}")
+    p.drawString(width - 190, height - 85, f"Status: Paid")
 
     # Add customer details
-    p.setFont("Helvetica-Bold", 12)
-    p.drawString(50, 680, "Bill To:")
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(50, height - 180, "Bill To:")
     p.setFont("Helvetica", 12)
-    p.drawString(50, 660, invoice[2])
-    p.drawString(50, 640, invoice[3])
-    p.drawString(50, 620, f"GSTIN: {invoice[4]}")
-    p.drawString(50, 600, f"Phone: {invoice[5]}")
+    p.drawString(50, height - 200, invoice[2])
+    p.drawString(50, height - 215, invoice[3])
+    p.drawString(50, height - 230, f"GSTIN: {invoice[4]}")
+    p.drawString(50, height - 245, f"Phone: {invoice[5]}")
 
-    # Add items table
+    # Add items table header
     p.setFont("Helvetica-Bold", 12)
-    p.drawString(50, 560, "Item")
-    p.drawString(200, 560, "Quantity")
-    p.drawString(300, 560, "Unit Price")
-    p.drawString(400, 560, "GST Rate")
-    p.drawString(500, 560, "Total")
+    p.drawString(50, height - 300, "Item")
+    p.drawString(200, height - 300, "Quantity")
+    p.drawString(300, height - 300, "Unit Price")
+    p.drawString(400, height - 300, "GST Rate")
+    p.drawString(500, height - 300, "Total")
 
-    y = 540
+    # Draw table lines
+    p.line(50, height - 310, width - 50, height - 310)
+    p.line(50, height - 310, 50, height - 450)
+    p.line(200, height - 310, 200, height - 450)
+    p.line(300, height - 310, 300, height - 450)
+    p.line(400, height - 310, 400, height - 450)
+    p.line(500, height - 310, 500, height - 450)
+    p.line(width - 50, height - 310, width - 50, height - 450)
+
+    # Add items
+    y = height - 330
+    p.setFont("Helvetica", 12)
     for item in items:
-        p.setFont("Helvetica", 12)
         p.drawString(50, y, item[0])
         p.drawString(200, y, str(item[1]))
-        p.drawString(300, y, f"₹{item[2]}")
+        p.drawString(300, y, f"₹{item[2]:.2f}")
         p.drawString(400, y, f"{item[3]}%")
-        p.drawString(500, y, f"₹{item[4]}")
+        p.drawString(500, y, f"₹{item[4]:.2f}")
         y -= 20
 
     # Add totals
     p.setFont("Helvetica-Bold", 12)
-    p.drawString(400, y-20, f"Subtotal: ₹{invoice[8]:.2f}")
-    p.drawString(400, y-40, f"GST: ₹{invoice[9]:.2f}")
-    p.drawString(400, y-60, f"Total: ₹{invoice[10]:.2f}")
+    p.drawString(400, y - 40, f"Subtotal: ₹{invoice[8]:.2f}")
+    p.drawString(400, y - 60, f"GST: ₹{invoice[9]:.2f}")
+    p.drawString(400, y - 80, f"Total: ₹{invoice[10]:.2f}")
 
-    # Add payment method and status
-    p.drawString(50, y-100, f"Payment Method: {invoice[7]}")
-    p.drawString(50, y-120, "Status: Paid")
+    # Add payment method
+    p.drawString(50, y - 120, f"Payment Method: {invoice[7]}")
 
     # Add terms and conditions
     p.setFont("Helvetica", 10)
-    p.drawString(50, y-160, "Terms and Conditions:")
-    p.drawString(50, y-180, "1. Payment is due within 30 days")
-    p.drawString(50, y-200, "2. Please include invoice number in payment reference")
-    p.drawString(50, y-220, "3. For any queries, contact accounts@company.com")
+    p.drawString(50, y - 160, "Terms and Conditions:")
+    p.drawString(50, y - 175, "1. Payment is due within 30 days")
+    p.drawString(50, y - 190, "2. Please include invoice number in payment reference")
+    p.drawString(50, y - 205, "3. For any queries, contact accounts@company.com")
+
+    # Add footer
+    p.setFont("Helvetica", 8)
+    p.drawString(50, 50, "Thank you for your business!")
+    p.drawString(50, 35, "This is a computer-generated invoice. No signature required.")
 
     p.save()
     buffer.seek(0)

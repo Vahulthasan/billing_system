@@ -1,47 +1,41 @@
 {% extends "layout.html" %}
 
 {% block content %}
-<div class="container">
-    <div class="row justify-content-center">
-        <div class="col-md-8">
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
             <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h4>Invoice Details</h4>
+                    <a href="{{ url_for('download_invoice', invoice_id=invoice.id) }}" class="btn btn-primary">
+                        <i class="fas fa-download"></i> Download PDF
+                    </a>
+                </div>
                 <div class="card-body">
-                    <!-- Business Header -->
-                    <div class="text-center mb-4">
-                        <h1 class="display-4">Your Store Name</h1>
-                        <p class="lead">123 Business Street, City, State - 123456</p>
-                        <p>GSTIN: 12ABCDE1234F1Z5</p>
-                        <p>📞 +91 9876543210 | ✉️ contact@yourstore.com</p>
-                    </div>
-
-                    <hr>
-
-                    <!-- Invoice Info -->
                     <div class="row mb-4">
                         <div class="col-md-6">
-                            <h5>Invoice Details</h5>
+                            <h5>Invoice Information</h5>
                             <p><strong>Invoice Number:</strong> {{ invoice.invoice_number }}</p>
-                            <p><strong>Date:</strong> {{ invoice.date.strftime('%d-%b-%Y') }}</p>
-                            <p><strong>Due Date:</strong> {{ (invoice.date + timedelta(days=30)).strftime('%d-%b-%Y') }}</p>
+                            <p><strong>Date:</strong> {{ invoice.date.strftime('%d-%m-%Y') }}</p>
+                            <p><strong>Status:</strong> <span class="badge bg-success">Paid</span></p>
                         </div>
                         <div class="col-md-6">
                             <h5>Customer Details</h5>
                             <p><strong>Name:</strong> {{ invoice.customer_name }}</p>
                             <p><strong>Address:</strong> {{ invoice.customer_address }}</p>
-                            <p><strong>GSTIN:</strong> {{ invoice.customer_gstin or 'N/A' }}</p>
+                            <p><strong>GSTIN:</strong> {{ invoice.customer_gstin }}</p>
+                            <p><strong>Phone:</strong> {{ invoice.customer_phone }}</p>
                         </div>
                     </div>
 
-                    <hr>
-
-                    <!-- Invoice Items -->
                     <div class="table-responsive">
-                        <table class="table">
-                            <thead>
+                        <table class="table table-bordered">
+                            <thead class="table-light">
                                 <tr>
-                                    <th>Product</th>
+                                    <th>Item</th>
                                     <th>Quantity</th>
-                                    <th>Price</th>
+                                    <th>Unit Price</th>
+                                    <th>GST Rate</th>
                                     <th>Total</th>
                                 </tr>
                             </thead>
@@ -50,54 +44,32 @@
                                 <tr>
                                     <td>{{ item.product.name }}</td>
                                     <td>{{ item.quantity }}</td>
-                                    <td>₹{{ item.product.price }}</td>
-                                    <td>₹{{ item.quantity * item.product.price }}</td>
+                                    <td>₹{{ item.unit_price }}</td>
+                                    <td>{{ item.gst_rate }}%</td>
+                                    <td>₹{{ item.total }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <td colspan="3" class="text-end"><strong>Subtotal:</strong></td>
-                                    <td>₹{{ invoice.total_amount }}</td>
+                                    <td colspan="4" class="text-end"><strong>Subtotal:</strong></td>
+                                    <td>₹{{ invoice.subtotal }}</td>
                                 </tr>
                                 <tr>
-                                    <td colspan="3" class="text-end"><strong>GST (18%):</strong></td>
-                                    <td>₹{{ invoice.total_amount * 0.18 }}</td>
+                                    <td colspan="4" class="text-end"><strong>GST:</strong></td>
+                                    <td>₹{{ invoice.gst_amount }}</td>
                                 </tr>
                                 <tr>
-                                    <td colspan="3" class="text-end"><strong>Total Amount:</strong></td>
-                                    <td>₹{{ invoice.total_amount * 1.18 }}</td>
+                                    <td colspan="4" class="text-end"><strong>Total:</strong></td>
+                                    <td>₹{{ invoice.total }}</td>
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
 
-                    <hr>
-
-                    <!-- Payment Details -->
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h5>Payment Information</h5>
-                            <p><strong>Payment Method:</strong> {{ invoice.payment_method }}</p>
-                            <p><strong>Status:</strong> {{ invoice.status }}</p>
-                        </div>
-                        <div class="col-md-6">
-                            <h5>Terms & Conditions</h5>
-                            <ul class="list-unstyled">
-                                <li>• Payment is due within 30 days</li>
-                                <li>• Please quote invoice number in all correspondence</li>
-                                <li>• Goods once sold will not be taken back</li>
-                            </ul>
-                        </div>
-                    </div>
-
-                    <div class="text-center mt-4">
-                        <a href="{{ url_for('download_invoice', invoice_id=invoice.id) }}" class="btn btn-primary">
-                            <i class="fas fa-download"></i> Download PDF
-                        </a>
-                        <a href="{{ url_for('index') }}" class="btn btn-secondary">
-                            <i class="fas fa-home"></i> Back to Home
-                        </a>
+                    <div class="mt-4">
+                        <h5>Payment Information</h5>
+                        <p><strong>Payment Method:</strong> {{ invoice.payment_method }}</p>
                     </div>
                 </div>
             </div>
