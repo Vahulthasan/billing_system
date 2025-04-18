@@ -39,9 +39,19 @@ os.makedirs(INSTANCE_PATH, exist_ok=True)
 app = Flask(__name__)
 
 # Configuration
-app.config['SECRET_KEY'] = 'your-secret-key-here'
-db_path = os.path.join(INSTANCE_PATH, 'billing_system.db')
-app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
+
+# Database configuration
+if os.getenv('RENDER'):
+    # Use SQLite for Render deployment
+    db_path = os.path.join(os.getcwd(), 'instance', 'billing_system.db')
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
+else:
+    # Local development database
+    db_path = os.path.join(INSTANCE_PATH, 'billing_system.db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_path}"
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Stripe (Optional)
@@ -761,6 +771,12 @@ with app.app_context():
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-        print(create_test_invoice())
-    app.run(host='0.0.0.0', port=5000, debug=True)
+        if os.getenv('RENDER'):
+            # Create test data only in development
+            print(create_test_invoice())
+    # Use production server when deployed
+    if os.getenv('RENDER'):
+        app.run()
+    else:
+        app.run(host='0.0.0.0', port=5000, debug=True)
 
