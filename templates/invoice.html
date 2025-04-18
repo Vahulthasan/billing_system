@@ -6,28 +6,56 @@
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h4>Invoice Details</h4>
-                    <a href="{{ url_for('download_invoice', invoice_id=invoice.id) }}" class="btn btn-primary">
-                        <i class="fas fa-download"></i> Download PDF
-                    </a>
+                    <h4 class="mb-0">
+                        <i class="fas fa-file-invoice me-2"></i>Invoice Details
+                    </h4>
+                    <div class="btn-group">
+                        <a href="{{ url_for('download_invoice', invoice_id=invoice.id) }}" 
+                           class="btn btn-primary">
+                            <i class="fas fa-download me-2"></i>Download PDF
+                        </a>
+                        <button type="button" class="btn btn-outline-primary" 
+                                onclick="window.print()">
+                            <i class="fas fa-print me-2"></i>Print
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body">
+                    <!-- Company Details -->
                     <div class="row mb-4">
                         <div class="col-md-6">
-                            <h5>Invoice Information</h5>
-                            <p><strong>Invoice Number:</strong> {{ invoice.invoice_number }}</p>
-                            <p><strong>Date:</strong> {{ invoice.date.strftime('%d-%m-%Y') }}</p>
-                            <p><strong>Status:</strong> <span class="badge bg-success">Paid</span></p>
+                            <h5 class="text-primary">Your Company Name</h5>
+                            <p class="mb-1">123 Business Street</p>
+                            <p class="mb-1">City, State - 123456</p>
+                            <p class="mb-1">GSTIN: 12ABCDE1234F1Z5</p>
+                            <p class="mb-1">Phone: +91 9876543210</p>
                         </div>
-                        <div class="col-md-6">
-                            <h5>Customer Details</h5>
-                            <p><strong>Name:</strong> {{ invoice.customer_name }}</p>
-                            <p><strong>Address:</strong> {{ invoice.customer_address }}</p>
-                            <p><strong>GSTIN:</strong> {{ invoice.customer_gstin }}</p>
-                            <p><strong>Phone:</strong> {{ invoice.customer_phone }}</p>
+                        <div class="col-md-6 text-end">
+                            <h5 class="text-primary">Invoice #{{ invoice.invoice_number }}</h5>
+                            <p class="mb-1"><strong>Date:</strong> {{ invoice.date.strftime('%d-%m-%Y') }}</p>
+                            <p class="mb-1"><strong>Status:</strong> 
+                                <span class="badge bg-success">Paid</span>
+                            </p>
                         </div>
                     </div>
 
+                    <!-- Customer Details -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h5 class="text-primary">Bill To:</h5>
+                            <p class="mb-1"><strong>Name:</strong> {{ invoice.customer_name }}</p>
+                            <p class="mb-1"><strong>Address:</strong> {{ invoice.customer_address }}</p>
+                            <p class="mb-1"><strong>GSTIN:</strong> {{ invoice.customer_gstin }}</p>
+                            <p class="mb-1"><strong>Phone:</strong> {{ invoice.customer_phone }}</p>
+                        </div>
+                        <div class="col-md-6 text-end">
+                            <h5 class="text-primary">Payment Details</h5>
+                            <p class="mb-1"><strong>Method:</strong> {{ invoice.payment_method }}</p>
+                            <p class="mb-1"><strong>Date:</strong> {{ invoice.date.strftime('%d-%m-%Y') }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Items Table -->
                     <div class="table-responsive">
                         <table class="table table-bordered">
                             <thead class="table-light">
@@ -50,7 +78,7 @@
                                 </tr>
                                 {% endfor %}
                             </tbody>
-                            <tfoot>
+                            <tfoot class="table-light">
                                 <tr>
                                     <td colspan="4" class="text-end"><strong>Subtotal:</strong></td>
                                     <td>₹{{ invoice.subtotal }}</td>
@@ -61,19 +89,68 @@
                                 </tr>
                                 <tr>
                                     <td colspan="4" class="text-end"><strong>Total:</strong></td>
-                                    <td>₹{{ invoice.total }}</td>
+                                    <td><strong>₹{{ invoice.total }}</strong></td>
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
 
+                    <!-- Terms and Conditions -->
                     <div class="mt-4">
-                        <h5>Payment Information</h5>
-                        <p><strong>Payment Method:</strong> {{ invoice.payment_method }}</p>
+                        <h5 class="text-primary">Terms and Conditions</h5>
+                        <ol class="mb-0">
+                            <li>Payment is due within 30 days</li>
+                            <li>Please include invoice number in payment reference</li>
+                            <li>For any queries, contact accounts@company.com</li>
+                        </ol>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- Action Buttons -->
+    <div class="row mt-3">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between">
+                <a href="{{ url_for('view_invoices') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Back to Invoices
+                </a>
+                <div class="btn-group">
+                    <a href="{{ url_for('download_invoice', invoice_id=invoice.id) }}" 
+                       class="btn btn-primary">
+                        <i class="fas fa-download me-2"></i>Download PDF
+                    </a>
+                    <button type="button" class="btn btn-outline-primary" 
+                            onclick="window.print()">
+                        <i class="fas fa-print me-2"></i>Print
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+
+<!-- Print Styles -->
+<style>
+    @media print {
+        .navbar, .btn-group, .btn {
+            display: none !important;
+        }
+        .card {
+            border: none !important;
+            box-shadow: none !important;
+        }
+        .card-header {
+            background-color: white !important;
+            border-bottom: 2px solid #000 !important;
+        }
+        .table {
+            border: 1px solid #000 !important;
+        }
+        .table th, .table td {
+            border: 1px solid #000 !important;
+        }
+    }
+</style>
 {% endblock %} 
