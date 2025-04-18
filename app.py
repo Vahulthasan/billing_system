@@ -1040,7 +1040,13 @@ def initialize_db():
 
 if __name__ == '__main__':
     if os.getenv('RENDER'):
-        app.run()
+        # Running on Render.com
+        app.run(host='0.0.0.0')
     else:
+        # Local development
         app.run(host='0.0.0.0', port=5000, debug=True)
+
+# Initialize database tables
+with app.app_context():
+    db.create_all()
 
