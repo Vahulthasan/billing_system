@@ -1,5 +1,5 @@
 from datetime import datetime
-from models import db, Invoice, InvoicePDF
+from models import db, Invoice, InvoicePDF, Product
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -197,21 +197,59 @@ class InvoiceGenerator:
             raise Exception(f"Failed to generate invoice PDF: {str(e)}")
 
     def regenerate_all_invoices(self):
-        """Regenerate PDFs for all invoices"""
+        """Attempt to regenerate PDFs for all invoices."""
+        from app import db
+
+        success_count = 0
+        failure_count = 0
+        skipped_count = 0
+
         invoices = Invoice.query.all()
-        results = {'success': [], 'failed': []}
-        
         for invoice in invoices:
             try:
-                self.generate_invoice_pdf(invoice.id)
-                results['success'].append(invoice.invoice_number)
+                # Check if any products in this invoice are now hidden
+                has_hidden_products = False
+                for item in invoice.items:
+                    product = Product.query.get(item.product_id)
+                    if product and product.hidden:
+                        has_hidden_products = True
+                        break
+
+                if has_hidden_products:
+                    print(f"Skipping invoice {invoice.invoice_number} - contains hidden products")
+                    skipped_count += 1
+                    continue
+
+                pdf_data = self.generate_invoice_pdf(invoice.id)
+                if not pdf_data:
+                    raise ValueError("PDF generation failed - no data returned")
+
+                # Update or create PDF record
+                invoice_pdf = InvoicePDF.query.filter_by(invoice_id=invoice.id).first()
+                if not invoice_pdf:
+                    invoice_pdf = InvoicePDF(
+                        invoice_id=invoice.id,
+                        file_name=f"invoice_{invoice.invoice_number}.pdf"
+                    )
+
+                invoice_pdf.pdf_data = pdf_data
+                invoice_pdf.file_size = len(pdf_data)
+                db.session.add(invoice_pdf)
+                db.session.commit()
+
+                success_count += 1
+                print(f"Successfully regenerated invoice {invoice.invoice_number}")
+
             except Exception as e:
-                results['failed'].append({
-                    'invoice_number': invoice.invoice_number,
-                    'error': str(e)
-                })
-        
-        return results
+                failure_count += 1
+                print(f"Failed to regenerate invoice {invoice.invoice_number}: {str(e)}")
+                continue
+
+        return {
+            'success': success_count,
+            'failure': failure_count,
+            'skipped': skipped_count
+        }
 
 # Create an instance of the invoice generator
 invoice_generator = InvoiceGenerator()

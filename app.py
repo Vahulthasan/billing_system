@@ -51,7 +51,7 @@ app = Flask(__name__)
 
 # Configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///billing.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///billing.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize extensions
@@ -220,10 +220,22 @@ def generate_invoice():
             gst_amount=total_gst
         )
         db.session.add(invoice)
-        db.session.flush()  # Get the invoice ID
+        db.session.flush()
 
         # Add invoice items
         for item in cart:
+            # Verify product exists and is not hidden
+            product = Product.query.filter_by(id=item['id'], hidden=False).first()
+            if not product:
+                db.session.rollback()
+                flash(f'Product {item["name"]} is no longer available', 'error')
+                return redirect(url_for('create_invoice'))
+
+            if product.quantity < item['qty']:
+                db.session.rollback()
+                flash(f'Insufficient stock for {product.name}', 'error')
+                return redirect(url_for('create_invoice'))
+
             invoice_item = InvoiceItem(
                 invoice_id=invoice.id,
                 product_id=item['id'],
@@ -238,14 +250,8 @@ def generate_invoice():
             db.session.add(invoice_item)
 
             # Update product stock
-            product = Product.query.get(item['id'])
-            if product:
-                if product.quantity < item['qty']:
-                    db.session.rollback()
-                    flash(f'Insufficient stock for {product.name}', 'error')
-                    return redirect(url_for('create_invoice'))
-                product.quantity -= item['qty']
-                db.session.add(product)
+            product.quantity -= item['qty']
+            db.session.add(product)
 
         try:
             # Generate PDF
@@ -934,6 +940,13 @@ def create_invoice():
 def create_tables():
     with app.app_context():
         db.create_all()
+        # Create admin user if it doesn't exist
+        if not User.query.filter_by(username='admin').first():
+            admin = User(username='admin')
+            admin.set_password('admin')
+            db.session.add(admin)
+            db.session.commit()
+            print("Created admin user")
 
 # Create tables before running the app
 create_tables()
