@@ -2,6 +2,14 @@
 
 {% block content %}
 <div class="container mt-4">
+    <!-- Floating Download Button -->
+    <div class="floating-download-btn">
+        <a href="{{ url_for('download_invoice', invoice_number=invoice.invoice_number) }}" 
+           class="btn btn-lg btn-primary rounded-circle shadow-lg">
+            <i class="fas fa-download fa-2x"></i>
+        </a>
+    </div>
+
     <div class="row">
         <div class="col-md-12">
             <div class="card">
@@ -10,11 +18,11 @@
                         <i class="fas fa-file-invoice me-2"></i>Invoice Details
                     </h4>
                     <div class="btn-group">
-                        <a href="{{ url_for('download_invoice', invoice_id=invoice.id) }}" 
-                           class="btn btn-primary">
-                            <i class="fas fa-download me-2"></i>Download PDF
+                        <a href="{{ url_for('download_invoice', invoice_number=invoice.invoice_number) }}" 
+                           class="btn btn-primary btn-lg">
+                            <i class="fas fa-download me-2"></i>Download Invoice PDF
                         </a>
-                        <button type="button" class="btn btn-outline-primary" 
+                        <button type="button" class="btn btn-outline-primary btn-lg" 
                                 onclick="window.print()">
                             <i class="fas fa-print me-2"></i>Print
                         </button>
@@ -34,7 +42,9 @@
                             <h5 class="text-primary">Invoice #{{ invoice.invoice_number }}</h5>
                             <p class="mb-1"><strong>Date:</strong> {{ invoice.date.strftime('%d-%m-%Y') }}</p>
                             <p class="mb-1"><strong>Status:</strong> 
-                                <span class="badge bg-success">Paid</span>
+                                <span class="badge bg-{{ 'success' if invoice.status == 'PAID' else 'warning' }}">
+                                    {{ invoice.status }}
+                                </span>
                             </p>
                         </div>
                     </div>
@@ -70,26 +80,26 @@
                             <tbody>
                                 {% for item in invoice.items %}
                                 <tr>
-                                    <td>{{ item.product.name }}</td>
+                                    <td>{{ item.product_name }}</td>
                                     <td>{{ item.quantity }}</td>
-                                    <td>₹{{ item.unit_price }}</td>
+                                    <td>₹{{ "%.2f"|format(item.unit_price) }}</td>
                                     <td>{{ item.gst_rate }}%</td>
-                                    <td>₹{{ item.total }}</td>
+                                    <td>₹{{ "%.2f"|format(item.total) }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                             <tfoot class="table-light">
                                 <tr>
                                     <td colspan="4" class="text-end"><strong>Subtotal:</strong></td>
-                                    <td>₹{{ invoice.subtotal }}</td>
+                                    <td>₹{{ "%.2f"|format(invoice.total_amount - invoice.gst_amount) }}</td>
                                 </tr>
                                 <tr>
                                     <td colspan="4" class="text-end"><strong>GST:</strong></td>
-                                    <td>₹{{ invoice.gst_amount }}</td>
+                                    <td>₹{{ "%.2f"|format(invoice.gst_amount) }}</td>
                                 </tr>
                                 <tr>
                                     <td colspan="4" class="text-end"><strong>Total:</strong></td>
-                                    <td><strong>₹{{ invoice.total }}</strong></td>
+                                    <td><strong>₹{{ "%.2f"|format(invoice.total_amount) }}</strong></td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -113,15 +123,15 @@
     <div class="row mt-3">
         <div class="col-md-12">
             <div class="d-flex justify-content-between">
-                <a href="{{ url_for('view_invoices') }}" class="btn btn-outline-secondary">
+                <a href="{{ url_for('view_invoices') }}" class="btn btn-outline-secondary btn-lg">
                     <i class="fas fa-arrow-left me-2"></i>Back to Invoices
                 </a>
                 <div class="btn-group">
-                    <a href="{{ url_for('download_invoice', invoice_id=invoice.id) }}" 
-                       class="btn btn-primary">
-                        <i class="fas fa-download me-2"></i>Download PDF
+                    <a href="{{ url_for('download_invoice', invoice_number=invoice.invoice_number) }}" 
+                       class="btn btn-primary btn-lg">
+                        <i class="fas fa-download me-2"></i>Download Invoice PDF
                     </a>
-                    <button type="button" class="btn btn-outline-primary" 
+                    <button type="button" class="btn btn-outline-primary btn-lg" 
                             onclick="window.print()">
                         <i class="fas fa-print me-2"></i>Print
                     </button>
@@ -131,10 +141,52 @@
     </div>
 </div>
 
-<!-- Print Styles -->
+<!-- Custom Styles -->
 <style>
+    /* Floating Download Button */
+    .floating-download-btn {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        z-index: 1000;
+    }
+
+    .floating-download-btn .btn {
+        width: 70px;
+        height: 70px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+    }
+
+    .floating-download-btn .btn:hover {
+        transform: scale(1.1);
+        box-shadow: 0 8px 15px rgba(0,0,0,0.2) !important;
+    }
+
+    /* Enhanced Button Styles */
+    .btn-lg {
+        padding: 12px 24px;
+        font-size: 1.1rem;
+    }
+
+    .btn-primary {
+        background-color: #5F7FFF;
+        border-color: #5F7FFF;
+        transition: all 0.3s ease;
+    }
+
+    .btn-primary:hover {
+        background-color: #4B6BE5;
+        border-color: #4B6BE5;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+
+    /* Print Styles */
     @media print {
-        .navbar, .btn-group, .btn {
+        .navbar, .btn-group, .btn, .floating-download-btn {
             display: none !important;
         }
         .card {

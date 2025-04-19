@@ -4,8 +4,11 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from io import BytesIO
+import qrcode
+from PIL import Image as PILImage
 
 class InvoiceGenerator:
     def __init__(self):
@@ -14,10 +17,30 @@ class InvoiceGenerator:
             'company_address': '123 Business Street, City, State - 123456',
             'company_gstin': '12ABCDE1234F1Z5',
             'company_phone': '+91 9876543210',
-            'company_email': 'contact@yourcompany.com'
+            'company_email': 'contact@yourcompany.com',
+            'company_website': 'www.yourcompany.com'
         }
+        
+    def _create_qr_code(self, invoice):
+        """Generate QR code with invoice details"""
+        qr_data = (
+            f"Invoice: {invoice.invoice_number}\n"
+            f"Date: {invoice.date.strftime('%d-%m-%Y')}\n"
+            f"Amount: ₹{invoice.total_amount:.2f}\n"
+            f"GSTIN: {invoice.customer_gstin}"
+        )
+        qr = qrcode.QRCode(version=1, box_size=10, border=5)
+        qr.add_data(qr_data)
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Convert to bytes
+        img_buffer = BytesIO()
+        qr_img.save(img_buffer, format='PNG')
+        img_buffer.seek(0)
+        return Image(img_buffer, width=1.5*inch, height=1.5*inch)
 
-    def generate_invoice_pdf(self, invoice_id):
+    def generate_invoice_pdf(self, invoice_id, include_qr=True):
         """Generate PDF for a given invoice ID"""
         try:
             # Get invoice from database
@@ -44,7 +67,12 @@ class InvoiceGenerator:
             styles.add(ParagraphStyle(
                 name='Center',
                 parent=styles['Heading1'],
-                alignment=1,
+                alignment=TA_CENTER,
+            ))
+            styles.add(ParagraphStyle(
+                name='Right',
+                parent=styles['Normal'],
+                alignment=TA_RIGHT,
             ))
 
             # Add company header
@@ -53,11 +81,21 @@ class InvoiceGenerator:
             elements.append(Paragraph(self.company_info['company_address'], styles['Center']))
             elements.append(Paragraph(f"GSTIN: {self.company_info['company_gstin']}", styles['Center']))
             elements.append(Paragraph(f"Phone: {self.company_info['company_phone']}", styles['Center']))
+            elements.append(Paragraph(f"Email: {self.company_info['company_email']}", styles['Center']))
             elements.append(Spacer(1, 20))
 
-            # Add invoice details
-            elements.append(Paragraph(f"Invoice #{invoice.invoice_number}", styles['Heading2']))
-            elements.append(Paragraph(f"Date: {invoice.date.strftime('%d-%m-%Y')}", styles['Normal']))
+            # Add invoice details and QR code in a table
+            invoice_data = [[
+                Paragraph(f"Invoice #{invoice.invoice_number}<br/>Date: {invoice.date.strftime('%d-%m-%Y')}", styles['Normal']),
+                self._create_qr_code(invoice) if include_qr else Paragraph("", styles['Normal'])
+            ]]
+            invoice_table = Table(invoice_data, colWidths=[4*inch, 2*inch])
+            invoice_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+                ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ]))
+            elements.append(invoice_table)
             elements.append(Spacer(1, 12))
 
             # Add customer details
@@ -92,35 +130,44 @@ class InvoiceGenerator:
                 ['', '', '', '', 'Total:', f"₹{invoice.total_amount:.2f}"]
             ])
 
-            # Create the table
+            # Create the table with improved styling
             table = Table(table_data, colWidths=[2*inch, inch, 1.1*inch, inch, 1.2*inch, 1.2*inch])
             table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 12),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, -3), (-1, -1), colors.lightgrey),
+                ('BACKGROUND', (0, -3), (-1, -1), colors.HexColor('#ecf0f1')),
                 ('TEXTCOLOR', (0, -3), (-1, -1), colors.black),
                 ('FONTNAME', (0, -3), (-1, -1), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, -3), (-1, -1), 10),
                 ('ALIGN', (-2, -3), (-1, -1), 'RIGHT'),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7'))
             ]))
             elements.append(table)
             elements.append(Spacer(1, 20))
 
-            # Add payment information
-            elements.append(Paragraph("Payment Information", styles['Heading3']))
-            elements.append(Paragraph(f"Payment Method: {invoice.payment_method}", styles['Normal']))
-            elements.append(Paragraph(f"Status: {invoice.status}", styles['Normal']))
+            # Add payment information with improved styling
+            payment_data = [
+                ['Payment Method:', invoice.payment_method],
+                ['Status:', invoice.status]
+            ]
+            payment_table = Table(payment_data, colWidths=[2*inch, 4*inch])
+            payment_table.setStyle(TableStyle([
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#2c3e50')),
+            ]))
+            elements.append(payment_table)
             elements.append(Spacer(1, 20))
 
             # Add footer
             elements.append(Paragraph("Thank you for your business!", styles['Center']))
             elements.append(Spacer(1, 12))
-            elements.append(Paragraph("This is a computer-generated invoice and does not require a signature.", styles['Center']))
+            elements.append(Paragraph("This is a computer-generated invoice.", styles['Center']))
 
             # Build PDF
             doc.build(elements)
@@ -152,12 +199,19 @@ class InvoiceGenerator:
     def regenerate_all_invoices(self):
         """Regenerate PDFs for all invoices"""
         invoices = Invoice.query.all()
+        results = {'success': [], 'failed': []}
+        
         for invoice in invoices:
             try:
                 self.generate_invoice_pdf(invoice.id)
-                print(f"Successfully regenerated PDF for invoice {invoice.invoice_number}")
+                results['success'].append(invoice.invoice_number)
             except Exception as e:
-                print(f"Failed to regenerate PDF for invoice {invoice.invoice_number}: {str(e)}")
+                results['failed'].append({
+                    'invoice_number': invoice.invoice_number,
+                    'error': str(e)
+                })
+        
+        return results
 
 # Create an instance of the invoice generator
 invoice_generator = InvoiceGenerator()

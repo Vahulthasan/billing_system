@@ -46,11 +46,23 @@
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h4><i class="fas fa-boxes me-2"></i>Available Products</h4>
-                    {% if current_user.is_authenticated %}
-                    <a href="{{ url_for('add_product') }}" class="btn btn-primary">
-                        <i class="fas fa-plus me-2"></i>Add Product
-                    </a>
-                    {% endif %}
+                    <div class="d-flex align-items-center">
+                        {% if current_user.is_authenticated %}
+                        <div class="form-check me-3">
+                            <input type="checkbox" class="form-check-input" id="show-hidden" {% if show_hidden %}checked{% endif %}
+                                   onchange="window.location.href='{{ url_for('index', show_hidden='1' if not show_hidden else '0', search=request.args.get('search', '')) }}'">
+                            <label class="form-check-label" for="show-hidden">
+                                <i class="fas fa-eye-slash me-2"></i>Show hidden products
+                            </label>
+                        </div>
+                        <a href="{{ url_for('create_invoice') }}" class="btn btn-success me-2">
+                            <i class="fas fa-shopping-cart me-2"></i>View Cart (<span id="cart-count">0</span>)
+                        </a>
+                        <a href="{{ url_for('add_product') }}" class="btn btn-primary">
+                            <i class="fas fa-plus me-2"></i>Add Product
+                        </a>
+                        {% endif %}
+                    </div>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
@@ -60,6 +72,7 @@
                                     <th>Product</th>
                                     <th>Price</th>
                                     <th>GST Rate</th>
+                                    <th>Stock</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -69,9 +82,14 @@
                                     <td>{{ product.name }}</td>
                                     <td>₹{{ product.price }}</td>
                                     <td>{{ product.gst_rate }}%</td>
+                                    <td>{{ product.quantity }}</td>
                                     <td>
                                         {% if current_user.is_authenticated %}
                                         <div class="btn-group">
+                                            <button onclick="addToCart({{ product.id }}, '{{ product.name }}', {{ product.price }}, {{ product.gst_rate }})"
+                                                    class="btn btn-sm btn-success">
+                                                <i class="fas fa-cart-plus"></i> Add to Bill
+                                            </button>
                                             <a href="{{ url_for('edit_product', product_id=product.id) }}" 
                                                class="btn btn-sm btn-outline-primary">
                                                 <i class="fas fa-edit"></i>
@@ -147,4 +165,182 @@
     </div>
     {% endif %}
 </div>
+
+<!-- Cart Modal -->
+<div class="modal fade" id="cartModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Shopping Cart</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table" id="cart-items">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>Price</th>
+                                <th>Quantity</th>
+                                <th>GST</th>
+                                <th>Total</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="4" class="text-end"><strong>Subtotal:</strong></td>
+                                <td colspan="2">₹<span id="cart-subtotal">0.00</span></td>
+                            </tr>
+                            <tr>
+                                <td colspan="4" class="text-end"><strong>GST:</strong></td>
+                                <td colspan="2">₹<span id="cart-gst">0.00</span></td>
+                            </tr>
+                            <tr>
+                                <td colspan="4" class="text-end"><strong>Total:</strong></td>
+                                <td colspan="2">₹<span id="cart-total">0.00</span></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Continue Shopping</button>
+                <button type="button" class="btn btn-primary" onclick="proceedToCheckout()">Proceed to Checkout</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let cart = [];
+const cartModal = new bootstrap.Modal(document.getElementById('cartModal'));
+
+function addToCart(productId, name, price, gstRate) {
+    const existingItem = cart.find(item => item.productId === productId);
+    
+    if (existingItem) {
+        existingItem.quantity += 1;
+        existingItem.total = calculateItemTotal(existingItem);
+    } else {
+        cart.push({
+            productId: productId,
+            name: name,
+            price: price,
+            gstRate: gstRate,
+            quantity: 1,
+            total: price * (1 + gstRate/100)
+        });
+    }
+    
+    updateCartDisplay();
+    cartModal.show();
+    showToast('Product added to cart!');
+}
+
+function removeFromCart(productId) {
+    cart = cart.filter(item => item.productId !== productId);
+    updateCartDisplay();
+}
+
+function updateQuantity(productId, delta) {
+    const item = cart.find(item => item.productId === productId);
+    if (item) {
+        item.quantity = Math.max(1, item.quantity + delta);
+        item.total = calculateItemTotal(item);
+        updateCartDisplay();
+    }
+}
+
+function calculateItemTotal(item) {
+    return item.price * item.quantity * (1 + item.gstRate/100);
+}
+
+function updateCartDisplay() {
+    const tbody = document.querySelector('#cart-items tbody');
+    tbody.innerHTML = '';
+    
+    let subtotal = 0;
+    let totalGst = 0;
+    
+    cart.forEach(item => {
+        const itemSubtotal = item.price * item.quantity;
+        const itemGst = itemSubtotal * (item.gstRate/100);
+        subtotal += itemSubtotal;
+        totalGst += itemGst;
+        
+        tbody.innerHTML += `
+            <tr>
+                <td>${item.name}</td>
+                <td>₹${item.price}</td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary" onclick="updateQuantity(${item.productId}, -1)">-</button>
+                        <span class="btn btn-outline-secondary">${item.quantity}</span>
+                        <button class="btn btn-outline-secondary" onclick="updateQuantity(${item.productId}, 1)">+</button>
+                    </div>
+                </td>
+                <td>${item.gstRate}%</td>
+                <td>₹${item.total.toFixed(2)}</td>
+                <td>
+                    <button class="btn btn-sm btn-danger" onclick="removeFromCart(${item.productId})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+    
+    document.getElementById('cart-subtotal').textContent = subtotal.toFixed(2);
+    document.getElementById('cart-gst').textContent = totalGst.toFixed(2);
+    document.getElementById('cart-total').textContent = (subtotal + totalGst).toFixed(2);
+    document.getElementById('cart-count').textContent = cart.length;
+}
+
+function showToast(message) {
+    // You can implement a toast notification here
+    alert(message);
+}
+
+function proceedToCheckout() {
+    if (cart.length === 0) {
+        showToast('Cart is empty!');
+        return;
+    }
+    
+    const cartData = {
+        items: cart.map(item => ({
+            product_id: item.productId,
+            quantity: item.quantity,
+            price: item.price,
+            gst_rate: item.gstRate
+        }))
+    };
+    
+    // Store cart data in session storage
+    sessionStorage.setItem('cartData', JSON.stringify(cartData));
+    
+    // Redirect to create invoice page
+    window.location.href = "{{ url_for('create_invoice') }}";
+}
+
+// Initialize cart from session storage if available
+document.addEventListener('DOMContentLoaded', function() {
+    const savedCart = sessionStorage.getItem('cartData');
+    if (savedCart) {
+        cart = JSON.parse(savedCart).items.map(item => ({
+            productId: item.product_id,
+            name: item.name,
+            price: item.price,
+            gstRate: item.gst_rate,
+            quantity: item.quantity,
+            total: item.price * item.quantity * (1 + item.gst_rate/100)
+        }));
+        updateCartDisplay();
+    }
+});
+</script>
 {% endblock %}

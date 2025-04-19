@@ -32,6 +32,7 @@ class Product(db.Model):
     price = db.Column(db.Float, nullable=False)
     gst_rate = db.Column(db.Float, nullable=False)
     quantity = db.Column(db.Integer, default=0)
+    hidden = db.Column(db.Boolean, default=False)
 
 class Invoice(db.Model):
     id = db.Column(db.Integer, primary_key=True)
