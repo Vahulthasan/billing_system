@@ -16,3 +16,4 @@ alembic==1.7.7
 Flask-Mail==0.9.1
 urllib3==1.26.20
 charset-normalizer==2.0.12
+stripe==2.60.0
