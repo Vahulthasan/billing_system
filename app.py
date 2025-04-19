@@ -103,7 +103,7 @@ def index():
     
     if search_query:
         query = query.filter(Product.name.ilike(f'%{search_query}%'))
-    
+
     if not show_hidden:
         query = query.filter_by(hidden=False)
     
@@ -417,7 +417,6 @@ def add_product():
 @login_required
 def edit_product(product_id):
     product = Product.query.get_or_404(product_id)
-
     if request.method == 'POST':
         try:
             product.name = request.form['name']
@@ -432,7 +431,6 @@ def edit_product(product_id):
             db.session.rollback()
             flash(f'Error updating product: {str(e)}', 'danger')
             return redirect(url_for('edit_product', product_id=product_id))
-
     return render_template('edit_product.html', product=product)
 
 @app.route('/delete_product/<int:product_id>', methods=['POST'])
@@ -1083,17 +1081,21 @@ def initialize_db():
 
 def create_default_user():
     with app.app_context():
-        # Check if default user exists
-        default_user = User.query.filter_by(username='admin').first()
-        if not default_user:
-            # Create default admin user
-            default_user = User(
-                username='admin',
-                password='admin123'  # This will be hashed by the User model
-            )
-            db.session.add(default_user)
-            db.session.commit()
-            print("Default user created - Username: admin, Password: admin123")
+        try:
+            # Check if default user exists
+            default_user = User.query.filter_by(username='admin').first()
+            if not default_user:
+                # Create default admin user
+                default_user = User(username='admin')
+                default_user.set_password('admin123')  # This will properly hash the password
+                db.session.add(default_user)
+                db.session.commit()
+                print("Default admin user created successfully - Username: admin, Password: admin123")
+            else:
+                print("Admin user already exists")
+        except Exception as e:
+            print(f"Error creating default user: {str(e)}")
+            db.session.rollback()
 
 # Initialize database tables and create default user
 with app.app_context():
