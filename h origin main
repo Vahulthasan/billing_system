@@ -1,5 +1,0 @@
-[33m24f5321[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m Add billing system with product selection, invoice generation, and sample products initialization
-[33m59a500a[m Improve CRUD operations with proper error handling and fix product model fields
-[33m05c7e8b[m Fix product model by removing quantity field from add_product route
-[33m4868640[m Fix product addition by including gst_rate field
-[33md9a13ef[m Update templates with modern design and enhanced invoice download functionality
